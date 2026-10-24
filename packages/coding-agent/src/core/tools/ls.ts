@@ -84,13 +84,16 @@ export function createLsToolDefinition(
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
 						// Check if path exists.
-						if (!(await ops.exists(dirPath))) {
+						const exists = await ops.exists(dirPath);
+						if (signal?.aborted) return;
+						if (!exists) {
 							reject(new Error(`Path not found: ${dirPath}`));
 							return;
 						}
 
 						// Check if path is a directory.
 						const stat = await ops.stat(dirPath);
+						if (signal?.aborted) return;
 						if (!stat.isDirectory()) {
 							reject(new Error(`Not a directory: ${dirPath}`));
 							return;
@@ -100,10 +103,11 @@ export function createLsToolDefinition(
 						let entries: string[];
 						try {
 							entries = await ops.readdir(dirPath);
-						} catch (e: any) {
-							reject(new Error(`Cannot read directory: ${e.message}`));
+						} catch (e) {
+							reject(new Error(`Cannot read directory: ${e instanceof Error ? e.message : String(e)}`));
 							return;
 						}
+						if (signal?.aborted) return;
 
 						// Sort alphabetically, case-insensitive.
 						entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -112,6 +116,7 @@ export function createLsToolDefinition(
 						const results: string[] = [];
 						let entryLimitReached = false;
 						for (const entry of entries) {
+							if (signal?.aborted) return;
 							if (results.length >= effectiveLimit) {
 								entryLimitReached = true;
 								break;
@@ -128,8 +133,6 @@ export function createLsToolDefinition(
 							}
 							results.push(entry + suffix);
 						}
-
-						signal?.removeEventListener("abort", onAbort);
 
 						if (results.length === 0) {
 							resolve({ content: [{ type: "text", text: "(empty directory)" }], details: undefined });
@@ -159,9 +162,10 @@ export function createLsToolDefinition(
 							content: [{ type: "text", text: output }],
 							details: Object.keys(details).length > 0 ? details : undefined,
 						});
-					} catch (e: any) {
-						signal?.removeEventListener("abort", onAbort);
+					} catch (e) {
 						reject(e);
+					} finally {
+						signal?.removeEventListener("abort", onAbort);
 					}
 				})();
 			});
